@@ -27,6 +27,7 @@ where to put it.
 ## The mapping file ##
 
 The mapping file is a javascript file looking something like:
+
     var map = {
       namespaces: {"#default": "http://www.tei-c.org/ns/1.0",
                    "t": "http://www.tei-c.org/ns/1.0"},
@@ -58,11 +59,13 @@ be indented.
 
 Individual `elements` in formX are Javascript objects that may possess
 the following members:
+
     {name: "language",
      xpath: "/t:TEI/t:teiHeader/t:fileDesc/t:sourceDesc/t:msDesc/t:msContents/t:msItem/t:textLang",
      children: ["@mainLang", "@otherLangs", "."],
      tpl: "<textLang mainLang=\"$mainLang\"[ otherLangs=\"$otherLangs\"]>$textLang</textLang>",
      multi: false}
+     
 Only two of these, `xpath` and `tpl` are always required. `xpath` is
 simply the XPath (using a namespace prefix defined in the mapping's
 `namespaces` member) to the data you want in the XML file. `tpl` is a
@@ -98,7 +101,9 @@ the new element before or after the existing one.
 Functions that may be called on either values extracted from the XML or
 on values from the form. For example, in TEI, dates may be given in the
 following way:
+
     <date when="2012-05-08">May 8th, 2012</date>
+    
 with a `@when` (or `@notBefore`/`@notAfter`) attribute that uses an ISO 
 date format (YYYY-MM-DD with a minus sign before for BCE dates). But in 
 an HTML form, you might want to split out the year, month, and
@@ -107,6 +112,7 @@ values, and so that they can ignore leading zeroes. Maybe you'd want to
 give them a dropdown to choose between BCE and CE, and so on. You can
 write functions that do this kind of pre- and post-processing on form
 values.  For example:
+
     {name: "origDate",
      xpath: "/t:TEI/t:teiHeader/t:fileDesc/t:sourceDesc/t:msDesc/t:history/t:origin/t:origDate",
      children: [["@when","getYear"],["@when", "getMonth"], ["@when", "getDay"], ["@notBefore","getYear"],["@notBefore", "getMonth"], ["@notBefore", "getDay"], ["@notAfter","getYear"],["@notAfter", "getMonth"], ["@notAfter", "getDay"], "."],
@@ -129,9 +135,11 @@ are those nested options using curly braces). The value of `$year` is
 piped through the `pad()` function, again defined in the `functions`
 section, and this zero-pads the year from the form so that it is four
 digits long. So the values in the form might be 
+
     Year:  -99
     Month: 8
     Day:   7
+    
 But what would go into the XML would be "-0099-08-07". These functions 
 can also perform validation tasks.
 
