@@ -1,6 +1,9 @@
 var formX =  {
-  mapping: null, // The javascript object contianing the element mappings
+  mapping: null, // The javascript object containing the element mappings
   xml: null, // The instance DOM
+  error: false,
+  errorMessages: [],
+  errorIds: [],
   parser: new DOMParser(),
   // Loads XML from the specified URL.
   loadXML: function(uri) {
@@ -59,8 +62,8 @@ var formX =  {
       if ((elts[i].multi || elts[i].children)) {
         //unset all bound form values
         for (var j=0; j < names.length; j++) { 
-          var fe = jQuery(":input[name=\""+names[j]+"\"]");
-          fe.each(function(ind, elt) {
+          var e = jQuery("."+names[j]);
+          e.each(function(ind, elt) {
             formX.setFormValue(elt, "");
           });
         }
@@ -72,7 +75,7 @@ var formX =  {
             nc.insertAfter(jQuery("."+elts[i].name).eq(index - 1));
           }
           for (var j=0; j < names.length; j++) { 
-            var fe = jQuery(":input[name=\""+names[j]+"\"]");
+            var e = jQuery("."+names[j]);
             if (elts[i].children) { //set form element groups
               var children = elts[i].children; 
               if (jQuery.isArray(children[j])) { // we have to apply a function to the source value
@@ -80,26 +83,26 @@ var formX =  {
                 switch (child.resultType) {
                   case XPathResult.UNORDERED_NODE_ITERATOR_TYPE:
                     var c = child.iterateNext();
-                    if (c) formX.setFormValue(fe[index], formX.mapping.functions[children[j][1]](c.textContent));
+                    if (c) formX.setFormValue(e[index], formX.mapping.functions[children[j][1]](c.textContent));
                     break;
                   case XPathResult.STRING_TYPE:
-                    formX.setFormValue(fe[index], formX.mapping.functions[children[j][1]](child.stringValue));
+                    formX.setFormValue(e[index], formX.mapping.functions[children[j][1]](child.stringValue));
                 }
               } else {
                 var child = formX.xml.evaluate(children[j], node, formX.nsr, XPathResult.ANY_TYPE, null);
                 switch (child.resultType) {
                   case XPathResult.UNORDERED_NODE_ITERATOR_TYPE:
                     var c = child.iterateNext();
-                    if (c) formX.setFormValue(fe[index], c.textContent);
+                    if (c) formX.setFormValue(e[index], c.textContent);
                     break;
                   case XPathResult.STRING_TYPE:
-                    formX.setFormValue(fe[index], child.stringValue);
+                    formX.setFormValue(e[index], child.stringValue);
                 }
               }
             } else { //set simple form elements
-              var fe = jQuery("*[name=\""+names[j]+"\"]");
-              if (fe[index]) {
-                formX.setFormValue(fe[index], node.textContent);
+              var e = jQuery("."+names[j]);
+              if (e[index]) {
+                formX.setFormValue(e[index], node.textContent);
               } 
             }
           }
@@ -107,11 +110,11 @@ var formX =  {
           index++;
         }
       } else { // simple form elements
-        var fe = jQuery("*[name=\""+names[0]+"\"]");
-        if (fe[0] && node) {
-          formX.setFormValue(fe[0], node.textContent);
-        } else if (fe[0]) {
-          formX.setFormValue(fe[0], "");
+        var e = jQuery("."+names[0]);
+        if (e[0] && node) {
+          formX.setFormValue(e[0], node.textContent);
+        } else if (e[0]) {
+          formX.setFormValue(e[0], "");
         }
       }
     }
@@ -119,15 +122,7 @@ var formX =  {
   // Set the form control to the value, or check/uncheck if
   // it is a checkbox or radio button.
   setFormValue: function(elt, val) {
-    if (elt.type == "checkbox" || elt.type == "radio") {
-      if (elt.value == val) {
-        jQuery(elt).attr("checked", "checked");
-      } else {
-        jQuery(elt).removeAttr("checked");
-      }
-    } else {
-      elt.value = val;
-    }
+    jQuery(elt).val(val);
   },
   // Return the appropriate value of the provided form element. If it is
   // a checkbox or radio button, return its value only if it is checked.
@@ -152,11 +147,20 @@ var formX =  {
     }
     return names;
   },
+  // Resets the error state so that the form can be resubmitted after
+  // errors have been fixed.
+  resetErrors: function() {
+    formX.error = false;
+    formX.errorMessages = [];
+    formX.errorIds = [];
+  },
   // Populates the formX.xml DOM with values taken from the HTML form
   updateXML: function() {
+    formX.resetErrors();
     var elts = formX.mapping.elements
     for (var i = 0; i < elts.length; i++) {
       var names = formX.getNamesFromTemplate(elts[i].tpl);
+      var count = names.length;
       var c = formX.xml.evaluate("count("+elts[i].xpath+")", formX.xml.documentElement, formX.nsr, XPathResult.NUMBER_TYPE, null);
       // remove instances of the current mapped element
       for (var j=0; j < c.numberValue; j++) {
@@ -188,12 +192,17 @@ var formX =  {
         nc.each(function(index, elt) {
           var template = elts[i].tpl;
           for (var j=0; j < names.length; j++) {
-            var fe = jQuery(elt).find("*[name=\"+names[j]+"\"]");
+            var fe = jQuery(elt).find("."+names[j]);
             if (fe[0] && formX.getFormValue(fe[0]).length > 0) {
               template = template.replace("$"+names[j], formX.getFormValue(fe[0]));
+            } else if (elts[i].required) {
+              formX.errorMessages.push(names[j] + " must have a value.");
+              formX.errorIds.push(names[j]);
+              formX.error = true;
+              break;
             }
           }
-          template = formX.scrubTemplate(formX.execUpdates(template));
+          template = formX.scrubTemplate(formX.execUpdates(template), count);
           if (template) {
             var pe = formX.addParents(elts[i].xpath);
             formX.appendFragment(pe, template);
@@ -201,11 +210,15 @@ var formX =  {
         });
       } else {
         var template = elts[i].tpl;
-        var fe = jQuery("*[name=\""+names[0]+"\"]"); 
+        var fe = jQuery("."+names[0]); 
         if (fe[0] && formX.getFormValue(fe[0]).length > 0) {
           template = formX.execUpdates(template.replace("$"+names[0], formX.getFormValue(fe[0])));
+        } else if (elts[i].required){
+          formX.errorMessages.push(names[0].substring("apis_identifer_".length + 1) + " must have a value.");
+          formX.errorIds.push(names[0]);
+          formX.error = true;
         }
-        template = formX.scrubTemplate(template);
+        template = formX.scrubTemplate(template, count);
         if (template) {
           var pe = formX.addParents(elts[i].xpath);
           formX.appendFragment(pe, template);
@@ -290,7 +303,7 @@ var formX =  {
     if (elt.indexOf('[') > 0) {
       var preds = elt.replace(']', '', 'g').split('[');
       for (var i=1; i < preds.length; i++) {
-        var attr = preds[i].match(/([^=]+)='([^']+)'/);
+        var attr = preds[i].search(/([^=]+)='([^']+)'/);
         if (attr) {
           result.push(attr.splice(1,2));
         }
@@ -302,8 +315,13 @@ var formX =  {
   // removes the markers for optional sections.
   // If the template still contains un-replaced variables, then return null,
   // otherwise, return the template
-  scrubTemplate: function(template) {
+  scrubTemplate: function(template, origCount) {
     var names = formX.getNamesFromTemplate(template);
+    var optional = template.match(/[\[\{]/g);
+    var optionalCount = 0;
+    if (optional) {
+      optionalCount = optional.length;
+    } 
     for (var i=0; names && i < names.length; i++) {
       var brackets = new RegExp('\\{[^{\\[\\]]*\\$' + names[i] + '[^{\\[\\]]*\\}');
       template = template.replace(brackets, '');
@@ -312,11 +330,23 @@ var formX =  {
       var squarebrackets = new RegExp('\\[[^\\]\\[]*\\$' + names[i] + '[^\\]\\[]*\\]')
       template = template.replace(squarebrackets, '');
     }
-    if (template.match(/\$[a-zA-Z]\w+/)) {
+    var re = /\$([a-zA-Z](\w|_)+)/g;
+    // if some non-optional variables were replaced and others not, we have an error
+    var remains = template.match(re);
+    if (remains && remains.length == origCount - optionalCount) {
       return null;
     } else {
-      return template.replace(/[\[\]\{\}]/g, '');
+      var result;
+      while ((result = re.exec(template)) !== null) {
+        formX.error = true;
+        formX.errorMessages.push(result[1].substring(result[1].lastIndexOf("_") + 1) + " should not be empty");
+        formX.errorIds.push(result[1]);
+      }
+      if (formX.error) {
+        return null;
+      }
     }
+    return template.replace(/[\[\]\{\}]/g, '');
   },
   // Templates may contain function calls, bracketed with ~,~. This function executes those
   // functions (when variables within them have been substituted) and replaces the function
@@ -340,9 +370,19 @@ var formX =  {
     }
     return result;
   },
-  // Replace <>&'" with their respective XML entities
+  // Replace <>&'" with their respective XML entities and escape any characters that might
+  // interfere with formX, namely []{}~
   escapeXML: function(text) {
-    return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
+    return text.replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&apos;")
+      .replace(/\[/g, "&#x005B;")
+      .replace(/\]/g, "&#x005D;")
+      .replace(/\{/g, "&#x007B;")
+      .replace(/\]/g, "&#x005D;")
+      .replace(/\}/g, "&#x007E;")
   },
   // Figures out if the node is indented and returns the indent whitespace
   getIndent: function(node) {
